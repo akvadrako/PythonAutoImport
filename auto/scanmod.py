@@ -31,15 +31,15 @@ def store_attrs(db, modname):
     rec = db.get('modules', name=modname)
     if rec:
         # always assume an empty path is up-to-date (maybe builtin?)
-        if not rec.path:
+        if not rec['path']:
             return
         
         # check if the record needs to be updated
-        if mtime(rec.path) <= rec.modified:
+        if mtime(rec['path']) <= rec.modified:
             return
 
     log.debug('updating attributes for %s', modname)
-    db('DELETE FROM attrs WHERE module=?', modname)
+    db.delete('attrs', module=modname)
 
     mod = import_module(modname)
     for attr in dir(mod):
@@ -48,10 +48,12 @@ def store_attrs(db, modname):
             module=modname,
         )
 
+    path = getattr(mod, '__file__', None)
+
     db.replace('modules',
         name=modname,
-        path=mod.__file__,
-        modified=mtime(mod.__file__),
+        path=path,
+        modified=mtime(path) if path else None,
     )
 
 def update(db):
@@ -62,7 +64,11 @@ def update(db):
 
 def lookup(db, prefix):
     """Return a list of completions for prefix"""
-    return []
+    with db.pool() as conn:
+        cursor = conn('SELECT * FROM attrs WHERE name LIKE ?',
+            [prefix + '%'])
+
+        return [ (r['module'], r['name']) for r in cursor ]
 
 def test_scanmod():
     from auto.test import context
@@ -73,4 +79,4 @@ def test_scanmod():
         init_db(db)
         store_attrs(db, 'sys')
 
-        assert lookup(db, 'exi') == ['sys.exit']
+        assert lookup(db, 'exi') == [('sys', 'exit')]

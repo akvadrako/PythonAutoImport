@@ -39,3 +39,9 @@ def test_scan_modules():
     pass
 
 ################################################
+
+class Globals:
+    """Module-level globals."""
+    def __init__(self, **attrs):
+        for k,v in attrs.items():
+            setattr(self, k, v)

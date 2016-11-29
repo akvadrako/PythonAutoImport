@@ -1,5 +1,6 @@
 
 from auto.pool import Pool, PoolItem
+from auto.func import trace
 
 import sqlite3
 
@@ -34,35 +35,70 @@ class Database:
         
     def __call__(self, *args):
         with self.pool() as conn:
-            conn.execute(*args)
+            conn(*args)
 
     def add_table(self, schema):
         self(schema.create_sql)
 
-    def get(self, table_name, **keys):
-        keys, values = zip(keys.items())
+    def insert(self, table_name, **attrs):
+        keys, values = zip(*attrs.items())
 
-        cursor = self('SELECT * from table_name WHERE ' +
-            ' AND '.join('%s = ?' % k for k in keys),
-            values)
+        with self.pool() as conn:
+            conn('INSERT INTO ' + table_name + 
+                '(' + ', '.join(keys) +  ')' +
+                ' VALUES ' + '(' + ', '.join(['?'] * len(keys)) +  ')',
+                values)
 
-        if cursor.rowcount > 1:
-            raise RuntimeError('too many results')
+    def replace(self, table_name, **attrs):
+        keys, values = zip(*attrs.items())
 
-        return cursor.fetchone()
+        with self.pool() as conn:
+            conn('REPLACE INTO ' + table_name + 
+                '(' + ', '.join(keys) +  ')' +
+                ' VALUES ' + '(' + ', '.join(['?'] * len(keys)) +  ')',
+                values)
+
+    def delete(self, table_name, **attrs):
+        keys, values = zip(*attrs.items())
+
+        with self.pool() as conn:
+            conn('DELETE FROM ' + table_name + ' WHERE ' +
+                ' AND '.join('%s = ?' % k for k in keys),
+                values)
+
+    def get(self, table_name, **attrs):
+        keys, values = zip(*attrs.items())
+
+        with self.pool() as conn:
+            cursor = conn('SELECT * from ' + table_name + ' WHERE ' +
+                ' AND '.join('%s = ?' % k for k in keys),
+                values)
+
+            if cursor.rowcount > 1:
+                raise RuntimeError('too many results')
+
+            return cursor.fetchone()
 
 
 class Connection(PoolItem):
+    """Wrap an SQLite3 connection."""
+
+    @trace
     def __init__(self, path):
-        self.conn = sqlite3.connect(self.path,
-            isolation_level=sqlite3.DEFERRED,
+
+        self._raw = sqlite3.connect(path,
+            isolation_level="DEFERRED",
             detect_types=sqlite3.PARSE_DECLTYPES)
+        self._raw.row_factory = sqlite3.Row 
+
+    def __call__(self, *args):
+        return self._raw.execute(*args)
 
     # PoolItem
 
     def reset(self):
-        self.conn.commit()
+        self._raw.commit()
 
     def close(self):
-        self.conn.rollback()
-        self.conn.close()
+        self._raw.rollback()
+        self._raw.close()

@@ -1,6 +1,7 @@
 
 from sublime import Region, status_message
 from sublime_plugin import TextCommand, EventListener
+import os.path, sys
 
 active = False
 
@@ -8,6 +9,16 @@ active = False
 import_path = os.path.dirname(__file__)
 if import_path not in sys.path:
     sys.path.insert(0, import_path)
+
+from auto.scanmod import update, lookup
+from auto.dblite import Database
+from auto.lib import Globals
+
+g = Globals(
+    db=Database(os.path.dirname(__file__) + './db.sqlite3'),
+    update_thread=None,
+    stop=False,
+)
 
 class PythonAutoImportCommand(TextCommand):
     """Replace an auto-completed import."""
@@ -60,3 +71,21 @@ class PythonAutoImportListener(EventListener):
             return
 
         view.run_command('python_auto_import')
+
+def update_thread():
+    from time import sleep
+
+    while not g.stop:
+        update(g.db)
+        sleep(5)
+
+def plugin_loaded():
+    from threading import Thread
+
+    g.stop = False
+    g.update_thread = Thread(name='update_thread', target=update_thread)
+    g.update_thread.start()
+
+def plugin_unloaded():
+    g.stop = True
+    g.update_thread.wait()
