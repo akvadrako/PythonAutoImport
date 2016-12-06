@@ -1,34 +1,30 @@
+"""Sublime Text 3 Python Auto Import Plugin."""
+
+import sys, os.path
+sys.path.insert(0, os.path.dirname(__file__))
 
 from sublime import Region, status_message
 from sublime_plugin import TextCommand, EventListener
-import os.path, sys
-
-active = False
-
-# get packages from current directory
-import_path = os.path.dirname(__file__)
-if import_path not in sys.path:
-    sys.path.insert(0, import_path)
 
 from auto.scanmod import update, lookup
 from auto.dblite import Database
-from auto.lib import Globals
+from auto.core import Globals
+from auto.timer import Timer
+
+from threading import Lock
 
 g = Globals(
     db=Database(os.path.dirname(__file__) + './db.sqlite3'),
-    update_thread=None,
-    stop=False,
+    timer=None,
+    lock=Lock(),
 )
 
 class PythonAutoImportCommand(TextCommand):
     """Replace an auto-completed import."""
 
     def run(self, edit):
-        global active
-        if active:
+        if not g.lock.acquire(False):
             return
-
-        active = True
 
         region = self.view.sel()[0]
         parts = self.view.substr(region).split('.')
@@ -53,7 +49,7 @@ class PythonAutoImportCommand(TextCommand):
         self.view.insert(edit, imports.begin(),
             'from %s import %s\n' % (mod, parts[-1]))
 
-        active = False
+        g.lock.release()
 
 
 class PythonAutoImportListener(EventListener):
@@ -61,9 +57,14 @@ class PythonAutoImportListener(EventListener):
 
     def on_query_completions(self, view, prefix, locations):
         """Generate a list of importable symbols."""
-        return [
-            ["for\tfrom for.blah", "${1:auto.for.blah.xyz}"],
-        ]
+        results = []
+        for c in lookup(g.db, prefix):
+            results.append((
+                '%s\tfrom %s' % (c[1], c[0]),
+                '${1:auto.%s.%s}' % (c[0], c[1]),
+            ))
+
+        return results
 
     def on_modified(self, view):
         """Check for a selection from an auto-completed import."""
@@ -72,20 +73,9 @@ class PythonAutoImportListener(EventListener):
 
         view.run_command('python_auto_import')
 
-def update_thread():
-    from time import sleep
-
-    while not g.stop:
-        update(g.db)
-        sleep(5)
-
 def plugin_loaded():
-    from threading import Thread
-
-    g.stop = False
-    g.update_thread = Thread(name='update_thread', target=update_thread)
-    g.update_thread.start()
+    g.timer = Timer(lambda: update(g.db), 5)
 
 def plugin_unloaded():
-    g.stop = True
-    g.update_thread.wait()
+    g.timer.stop()
+    

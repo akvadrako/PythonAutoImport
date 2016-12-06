@@ -45,3 +45,15 @@ def test_nested_reraise_inline():
         assert isinstance(exc, IndexError)
     else:
         assert isinstance(exc, ZeroDivisionError)
+
+
+def test_modifiy_func():
+    class ABC:
+        def xyz(self):
+            return 1
+
+    a = ABC()
+    a.xyz = lambda: 5
+
+    assert a.xyz() == 5
+    

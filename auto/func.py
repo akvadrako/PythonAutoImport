@@ -30,7 +30,7 @@ class Partial:
         return self.func(*self.args, **self.kw)
 
     def __str__(self):
-        return '%s(%s)' % (self.func.__name__, Call(self.args, self.kw))
+        return '%s%s' % (self.func.__name__, Call(*self.args, **self.kw))
 
 ########################################## decorators
 
@@ -57,36 +57,33 @@ def wrapper(_wrapper):
 
 ################################################# trace
 
+from auto.log import log
+
 @wrapper
 def trace(partial):
     """Tracing function wrapper."""
-    from logging import getLogger
-
-    log = getLogger('trace')
-
     try:
         ret = partial()
-        log.info('%s -> %s', partial, ret)
+        log('TRACE', func=str(partial), ret=ret)
         return ret
     except Exception as e:
-        log.warn('%s throws %s', partial, e.__class__)
+        log('WEXC', func=str(partial), cls=e.__class__)
         raise
 
 from auto.core import Call
 from auto.mock import Mock
+from auto.log import capture
 
 def test_trace():
-    g = dict(
-        Partial=Partial,
-        __import__=Mock()
-    )
-    target = copy_func(trace, _globals=g)
+    with capture() as logs:
+        @trace
+        def blah(x):
+            return x + 1
 
-    @target
-    def blah(x):
-        return x + 1
-
-    assert g['__import__']('logging').getLogger.info._calls == Call()
-    assert blah(3) == 4
-
+        assert blah(3) == 4
+    
+    assert len(logs) == 1
+    assert logs[0].code == 'TRACE'
+    assert logs[0].ctx['ret'] == 4
+    assert logs[0].ctx['func'] == 'blah(3)'
 

@@ -15,16 +15,43 @@ def test_indent():
 
 ########################################
 
+def caller():
+    '''Return the calling module + function'''
+    import inspect
+    frame = inspect.currentframe().f_back.f_back
+    mod = inspect.getmodule(frame)
+    return "%s:%s" % (mod.__name__, frame.f_lineno)
+
+########################################
+
 class Call:
     """An function call argument list formatter."""
-    def __init__(self, args, kw):
+    def __init__(self, *args, **kw):
         self.args = args
         self.kw = kw
+
+    def __eq__(self, other):
+        return self.args == other.args and \
+            self.kw == other.kw
+
+    def __hash__(self):
+        if self.args:
+            return hash(self.args)
+        else:
+            return hash(self.kw)
 
     def __str__(self):
         args = [ str(s) for s in self.args ]
         args += [ '%s=%s' % kv for kv in self.kw.items() ]
-        return ', '.join(args)
+        return '(%s)' % ', '.join(args)
 
     def __repr__(self):
-        return 'Call(%r, %r)' % (self.args, self.kw)
+        return 'Call%s' % self
+
+########################################
+
+class Globals:
+    def __init__(self, **attrs):
+        for k, v in attrs.items():
+            setattr(self, k, v)
+

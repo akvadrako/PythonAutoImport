@@ -1,39 +1,42 @@
 """Simple Mocking"""
 
 from auto.core import Call, indent
+from collections import defaultdict
 
 class Mock:
-    """A simple mocking class."""
-    def __init__(self, name=''):
-        self._name = name
-        self._parts = dict()
+    """A simple mock object."""
+    def __init__(self, **attrs):
+        self._attrs = defaultdict(Mock)
+        self._attrs.update(attrs)
+
+        self._returns = defaultdict(Mock)
         self._calls = []
 
     def __call__(self, *args, **kw):
-        self._calls.append(Call(args, kw))
+        c = Call(*args, **kw)
+        self._calls.append(c)
+
+        return self._returns[c]
 
     def __getattr__(self, name):
-        if not name in self._parts:
-            full = (self._name + '.' + name).strip('.')
-            self._parts[name] = Mock(full)
-
-        return self._parts[name]
+        if name.startswith('_'):
+            raise AttributeError(name)
+        
+        return self._attrs[name]
 
     def __setattr__(self, name, value):
         if name.startswith('_'):
             return super().__setattr__(name, value)
         else:
-            self._parts[name] = value
+            self._attrs[name] = value
 
     def __repr__(self):
-        return 'Mock(%r)' % self._name
+        return 'Mock<0x%0x>' % id(self)
 
     def __str__(self):
-        print(self._name, list(self._parts.values()))
         return '\n'.join(
-            ['Mock(%r)' % self._name] +
-            [indent('call(%s)' % c) for c in self._calls] +
-            [indent('%s: %s' % kv) for kv in self._parts.items()]
+            [repr(self)] +
+            [indent('%s = %s' % kv) for kv in self._attrs.items()]
             )
 
 def test_mock():
@@ -41,4 +44,7 @@ def test_mock():
     m.b.c
     m.b(1,2)
 
-    assert str(m) == ''
+    assert 'c' in m._attrs['b']._attrs
+    assert m._attrs['b']._calls == [
+        Call(1,2)
+    ]
